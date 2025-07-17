@@ -1,6 +1,6 @@
-ubuntu-20.04-server-cloudimg-amd64.img
+ubuntu-20.04-server-cloudimg-amd64.img.1
 terraform.tfstate.backup
 terraform.tfstate
 terraform.tfstate.lock.info
-.terraform/ubuntu-20.04-server-cloudimg-amd64.img
-ubuntu-20.04-server-cloudimg-amd64.img
+.terraform/ubuntu-20.04-server-cloudimg-amd64.img.1
+ubuntu-20.04-server-cloudimg-amd64.img.1

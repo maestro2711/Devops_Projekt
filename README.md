@@ -78,6 +78,13 @@ sudo apt install genisoimage
     sudo apt install cockpit
     sudo install cockpit-machines
 ```
-
+## show the Ip adress from a VM
+```sh
+     virsh domifaddr dev-server-1
+```
+## we want to inkcrement the number of server by boot(  apply) 
+```sh
+     tofu apply -var="dev_count=3" -var="preprod_count=1" -var="prod_count=5"
+```
 
 
