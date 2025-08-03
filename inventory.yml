@@ -1,0 +1,21 @@
+all:
+  vars:
+    ansible_user: devops
+    ansible_become: true
+    ansible_become_method: sudo
+    ansible_ssh_private_key_file: /home/cantona/.ssh/id_ed25519
+
+  children:
+    controleplane:
+      hosts:
+        master:
+          ansible_host: 192.168.122.82
+
+    workers:
+      hosts:
+        worker1:
+          ansible_host: 192.168.122.158
+        worker2:
+          ansible_host: 192.168.122.134
+        worker3:
+          ansible_host: 192.168.122.45
