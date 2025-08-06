@@ -1,7 +1,13 @@
 ---
 - name: Install Docker auf allen Nodes
   hosts: all
-  gather_facts: false
+  gather_facts: true
   become: true
   roles:
       - common
+# join-k8s.yml
+- name: Kubernetes Cluster Setup
+  hosts: all
+  become: true
+  roles:
+    - kubernetes

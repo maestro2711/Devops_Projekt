@@ -1,69 +1,165 @@
+---
+- name: Remove conflicting Docker APT repo (if exists)
+  file:
+    path: /etc/apt/sources.list.d/docker.list
+    state: absent
 
-# tasks file for common
-- name: Install Docker
-  become: true
+- name: Remove any old Kubernetes sources
+  file:
+    path: /etc/apt/sources.list.d/kubernetes.list
+    state: absent
+
+- name: Remove old Docker GPG key (if exists)
+  file:
+    path: /etc/apt/keyrings/docker.gpg
+    state: absent
+
+
+- name: Install prerequisites
   apt:
-    name: docker.io
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
     state: present
-    update_cache: true
+    update_cache: yes
+
+- name: Ensure keyrings directory exists
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+### ----------------------------
+### Docker Installation Setup
+### ----------------------------
+
+- name: Add Docker GPG key (dearmored)
+  shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  args:
+    creates: /etc/apt/keyrings/docker.gpg
+
+- name: Add Docker APT repository (with signed-by)
+  apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu focal stable"
+    filename: docker
+    state: present
+
+- name: Install Docker  packages
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+     
+      
+    state: present
+
+- name: Install containerd
+  apt:
+    name: containerd
+    state: present
+    update_cache: yes
+
+- name: Create containerd config directory
+  file:
+    path: /etc/containerd
+    state: directory
+
+- name: Generate default containerd config
+  command: containerd config default
+  register: containerd_config
+  when: not ansible_check_mode
+
+- name: Save containerd config
+  copy:
+    dest: /etc/containerd/config.toml
+    content: "{{ containerd_config.stdout }}"
   
 
-- name: Install Docker SDK for Python (required by Ansible docker modules)
-  apt:
-    name: python3-docker
+- name: Enable SystemdCgroup driver
+  replace:
+    path: /etc/containerd/config.toml
+    regexp: 'SystemdCgroup = false'
+    replace: 'SystemdCgroup = true'
+  
+
+- name: Enable and restart containerd
+  systemd:
+    name: containerd
+    enabled: yes
+    state: restarted
+
+- name: Load br_netfilter module
+  command: modprobe br_netfilter
+  become: true
+
+- name: Ensure bridge-nf-call-iptables is set to 1
+  ansible.posix.sysctl:
+    name: net.bridge.bridge-nf-call-iptables
+    value: "1"
     state: present
-- name: Install kubectl
+    reload: yes
+### ----------------------------
+### Kubernetes Installation Setup
+### ----------------------------
+
+- name: Add Kubernetes apt key (GPG dearmored)
+  shell: |
+    curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.29/deb/Release.key | gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add Kubernetes apt repository
+  copy:
+    dest: /etc/apt/sources.list.d/kubernetes.list
+    content: |
+      deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.29/deb/ /
+    mode: '0644'
+
+- name: Update apt cache
   apt:
-    name: kubectl
-    state: present
     update_cache: true
-- name: Install kubeadmin
+    cache_valid_time: 3600
+
+- name: Install Kubernetes components
   apt:
-    name: kubeadm
+    name:
+      - kubelet
+      - kubeadm
+      - kubectl
     state: present
-    update_cache: true 
-- name: Install kubelet
-  apt:
-    name: kubelet
-    state: present
-    update_cache: true
-- name: Install python3-pip
-  apt:
-    name: python3-pip
-    state: present
-    update_cache: true
-- name: Install python3-venv
-  apt:
-    name: python3-venv
-    state: present
-    update_cache: true
-# - name: Install etcd
-#   apt:
-#     name: etcd
-#     state: present
-#     update_cache: true
-# - name: Install apiserver
-#   apt:
-#     name: apiserver
-#     state: present
-#     update_cache: true
-# - name: Install controller-manager
-#   apt:
-#     name: controller-manager
-#     state: present
-#     update_cache: true
-# - name: Install scheduler
-#   apt:
-#     name: scheduler
-#     state: present
-#     update_cache: true
-- name: Install cni-plugins
-  apt:
-    name: cni-plugins
-    state: present
-    update_cache: true
-# - name: Install kube-proxy
-#   apt:
-#     name: kube-proxy
-#     state: present
-#     update_cache: true
+    
+- name: Create .kube directory
+  file:
+    path: "/home/{{ ansible_user }}/.kube"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Copy admin.conf to user's kube config
+  copy:
+    src: /etc/kubernetes/admin.conf
+    dest: "/home/{{ ansible_user }}/.kube/config"
+    remote_src: yes
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0644'
+
+- name: Configure crictl for containerd
+  copy:
+    dest: /etc/crictl.yaml
+    content: |
+      runtime-endpoint: unix:///run/containerd/containerd.sock
+      image-endpoint: unix:///run/containerd/containerd.sock
+      timeout: 10
+      debug: false
+    owner: root
+    group: root
+    mode: '0644'
+  tags:
+    - crictl
+

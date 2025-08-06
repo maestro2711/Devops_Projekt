@@ -2,7 +2,7 @@ terraform {
   required_providers {
     libvirt = {
       source  = "dmacvicar/libvirt"
-      version = ">=0.7.0"
+      version = ">= 0.7.0"
     }
   }
 }
@@ -11,72 +11,63 @@ provider "libvirt" {
   uri = "qemu:///system"
 }
 
-# VM-Anzahlen je Umgebung
-variable "dev_count"     { default = 2 }
-variable "preprod_count" { default = 2 }
-variable "prod_count"    { default = 4}
-
-# Konfigurationsprofil pro Umgebung
+# VM-Konfiguration pro Umgebung
 variable "environnment" {
   default = {
     dev = {
+      count  = 1
       memory = 2048
       vcpu   = 2
     }
     preprod = {
+      count  = 1
       memory = 4096
-      vcpu   = 4
+      vcpu   = 2
     }
     prod = {
+      count  = 3
       memory = 4096
-      vcpu   = 4
+      vcpu   = 2
     }
   }
 }
 
-# Liste aller VMs (flach)
+# Flache Liste aller VMs
 locals {
   vms = flatten([
     for env_name, env in var.environnment : [
-      for i in range(
-        env_name == "dev"     ? var.dev_count     :
-        env_name == "preprod" ? var.preprod_count :
-                                var.prod_count
-      ) : {
+      for i in range(env.count) : {
         name   = "${env_name}-server-${i + 1}"
         memory = env.memory
         vcpu   = env.vcpu
       }
     ]
   ])
-}
 
-# Map für Terraform-Iteration
-locals {
   vm_map = {
     for vm in local.vms : vm.name => vm
   }
 }
 
-# Basis-Image (unverändert)
+# Basisimage (nur einmal importiert)
 resource "libvirt_volume" "base" {
-  name   = "ubuntu-20.04-server-cloudimg-amd64"
-  source = "/home/cantona/devops/Devops_Projekt/ubuntu-20.04-server-cloudimg-amd64.img.1"
+  name   = "ubuntu-base.qcow2"
+  source = "/home/cantona/devops/Devops_Projekt/ubuntu-base.qcow2"
   pool   = "default"
   format = "qcow2"
 }
 
-# Disk: direkt aus Basis-Image kopieren (nicht base_volume_id!)
+# Kopie des Basisimages (jede VM bekommt ihr eigenes Volume)
 resource "libvirt_volume" "vm_disk" {
   for_each = local.vm_map
 
-  name   = "${each.key}-disk"
-  source = "/home/cantona/devops/Devops_Projekt/ubuntu-20.04-server-cloudimg-amd64.img.1"
-  pool   = "default"
-  format = "qcow2"
+  name           = "${each.key}-disk"
+  base_volume_id = libvirt_volume.base.id
+  pool           = "default"
+  format         = "qcow2"
 }
 
-# Cloud-Init-ISO inkl. Benutzerkonfiguration
+# Cloud-Init ISO
 resource "libvirt_cloudinit_disk" "cloudinit" {
   for_each = local.vm_map
 
@@ -84,30 +75,25 @@ resource "libvirt_cloudinit_disk" "cloudinit" {
 
   user_data = <<EOF
 #cloud-config
-hostname: ${each.value.name}
+hostname: ${each.key}
 ssh_pwauth: true
-
 users:
   - name: devops
-    passwd: $6$JQiHNGD0eGiZ1FZJ$PXryAEW8o2G0XOefsTjHzz1qVWyKnZYkRDFBRXScrQAaYq.W8d/bEOr/TqHPYtk9N/b8pvhuEPSI7jLbE1t/S0
-    lock_passwd: false
+    groups: [sudo]
     shell: /bin/bash
-    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    sudo: ["ALL=(ALL) NOPASSWD:ALL"]
+    lock_passwd: false
+    passwd: "$6$JQiHNGD0eGiZ1FZJ$PXryAEW8o2G0XOefsTjHzz1qVWyKnZYkRDFBRXScrQAaYq.W8d/bEOr/TqHPYtk9N/b8pvhuEPSI7jLbE1t/S0"
     ssh-authorized-keys:
       - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAnEo8p91gvql3SuwFeeG3sqXmYbwgKyvIsWTh14ugv6 cantona@cantona22
-
-datasource:
-  None:
-    instance-id: ${each.key}
-    local-hostname: ${each.value.name}
 EOF
 }
 
-# Virtuelle Maschinen
+# VMs erzeugen
 resource "libvirt_domain" "vms" {
   for_each = local.vm_map
 
-  name   = each.value.name
+  name   = each.key
   memory = each.value.memory
   vcpu   = each.value.vcpu
 
@@ -119,7 +105,7 @@ resource "libvirt_domain" "vms" {
 
   network_interface {
     network_name = "default"
-    hostname     = each.value.name
+    hostname     = each.key
   }
 
   graphics {
@@ -135,7 +121,7 @@ resource "libvirt_domain" "vms" {
   }
 }
 
-# Gruppierung der IP-Adressen
+# IP-Ausgabe nach Umgebung
 locals {
   grouped_ips = {
     dev = [
@@ -155,7 +141,7 @@ locals {
     ]
   }
 }
-# Ausgabe der IP-Adressen
-output "dev_ips" {
-  value = local.grouped_ips.dev
-}
+
+output "dev_ips"     { value = local.grouped_ips.dev }
+output "preprod_ips" { value = local.grouped_ips.preprod }
+output "prod_ips"    { value = local.grouped_ips.prod }

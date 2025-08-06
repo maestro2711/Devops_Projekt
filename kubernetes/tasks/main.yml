@@ -1,0 +1,12 @@
+#SPDX-License-Identifier: MIT-0
+---
+# tasks file for kubernetes
+# roles/kubernetes/tasks/main.yml
+
+- name: Kubernetes Master Setup
+  include_tasks: master.yml
+  when: "'master' in group_names"
+
+- name: Kubernetes Worker Setup
+  include_tasks: worker.yml
+  when: "'worker' in group_names"

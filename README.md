@@ -86,5 +86,7 @@ sudo apt install genisoimage
 ```sh
      tofu apply -var="dev_count=3" -var="preprod_count=1" -var="prod_count=5"
 ```
-
-
+## jedes mal when wir das kubernetes apt repository aktualisieren möchten , müssen wir immer das vorherige reository löschen
+```sh
+     sudo rm -f /etc/apt/sources.list.d/kubernetes.list
+```
