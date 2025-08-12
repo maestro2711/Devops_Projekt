@@ -12,9 +12,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest   # runner GitHub hébergé
+    environment: MASTER_USER
     env:
-      master_ts_host: ${{ MASTER_TS_HOST}}     # ou master-tailnet.ts.net (Tailscale)
-      MASTER_TS_USER: ${{MASTER_USER}}          # utilisateur SSH sudoer sur le master
+      master_ts_host: ${{ vars.MASTER_TS_HOST }}     # ou master-tailnet.ts.net (Tailscale)
+      MASTER_TS_USER: ${{ vars.MASTER_USER }}          # utilisateur SSH sudoer sur le master
       REMOTE_KUBECONFIG: /etc/kubernetes/admin.conf
 
     steps:
@@ -38,7 +39,7 @@ jobs:
       - name: Fetch kubeconfig from master
         run: |
           ssh -o StrictHostKeyChecking=no -i <(echo "${{ secrets.SSH_PRIVATE_KEY }}") \
-            ${{ MASTER_USER }}@${{ MASTER_TS_HOST }} \
+            ${{ vars.MASTER_USER }}@${{ vars.MASTER_TS_HOST }} \
             "sudo cat ${{ env.REMOTE_KUBECONFIG }}" > admin.conf
           mkdir -p ~/.kube
           cp admin.conf ~/.kube/config
