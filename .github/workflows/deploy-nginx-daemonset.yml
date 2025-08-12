@@ -1,0 +1,53 @@
+name: Deploy NGINX DaemonSet via Tailscale
+
+on:
+  push:
+    branches:
+      - 01-firstvm
+    paths:
+     - "nginx-daemonset.yml"
+     - ".github/workflows/deploy-nginx-daemonset.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest   # runner GitHub hébergé
+    env:
+      master_ts_host: ${{ env.MASTER_TS_HOST}}     # ou master-tailnet.ts.net (Tailscale)
+      MASTER_TS_USER: ${{env.MASTER_USER}}          # utilisateur SSH sudoer sur le master
+      REMOTE_KUBECONFIG: /etc/kubernetes/admin.conf
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1) Connecter le runner GitHub au tailnet Tailscale
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
+      # 2) Installer kubectl côté runner
+      - name: Install kubectl
+        run: |
+          curl -sSLo kubectl https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
+          kubectl version --client
+
+      # 3) Récupérer le kubeconfig du master via Tailscale
+      - name: Fetch kubeconfig from master
+        run: |
+          ssh -o StrictHostKeyChecking=no -i <(echo "${{ secrets.SSH_PRIVATE_KEY }}") \
+            ${{ env.MASTER_USER }}@${{ env.MASTER_TS_HOST }} \
+            "sudo cat ${{ env.REMOTE_KUBECONFIG }}" > admin.conf
+          mkdir -p ~/.kube
+          cp admin.conf ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      # 4) Appliquer le DaemonSet NGINX
+      - name: Apply NGINX DaemonSet
+        run: |
+          kubectl --kubeconfig ~/.kube/config cluster-info
+          kubectl --kubeconfig ~/.kube/config apply -f nginx-daemonset.yaml
+          kubectl --kubeconfig ~/.kube/config -n default rollout status ds/nginx-all-nodes --timeout=180s || true
+          kubectl --kubeconfig ~/.kube/config -n default get ds nginx-all-nodes -o wide
