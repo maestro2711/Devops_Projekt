@@ -5,47 +5,53 @@ on:
     branches:
       - 01-firstvm
     paths:
-     - "nginx-daemonset.yml"
-     - ".github/workflows/deploy-nginx-daemonset.yml"
+      - "nginx-daemonset.yaml"
+      - ".github/workflows/deploy-nginx-daemonset.yml"
   workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest   # runner GitHub hébergé
-    environment: MASTER_USER
+
     env:
-      master_ts_host: ${{ vars.MASTER_TS_HOST }}     # ou master-tailnet.ts.net (Tailscale)
-      MASTER_TS_USER: ${{ vars.MASTER_USER }}          # utilisateur SSH sudoer sur le master
-      REMOTE_KUBECONFIG: /etc/kubernetes/admin.conf
+      MASTER_TS_HOST: "100.114.232.32"        # <- IP/nom Tailscale du master
+      MASTER_TS_USER: "devops"                # <- utilisateur SSH sudoer sur le master
+      REMOTE_KUBECONFIG: "/etc/kubernetes/admin.conf"
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 1) Connecter le runner GitHub au tailnet Tailscale
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
 
-      # 2) Installer kubectl côté runner
       - name: Install kubectl
         run: |
           curl -sSLo kubectl https://dl.k8s.io/release/$(curl -sSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl
           chmod +x kubectl && sudo mv kubectl /usr/local/bin/kubectl
           kubectl version --client
 
-      # 3) Récupérer le kubeconfig du master via Tailscale
-      - name: Fetch kubeconfig from master
+      - name: Write SSH key file
         run: |
-          ssh -o StrictHostKeyChecking=no -i <(echo "${{ secrets.SSH_PRIVATE_KEY }}") \
-            ${{ vars.MASTER_USER }}@${{ vars.MASTER_TS_HOST }} \
-            "sudo cat ${{ env.REMOTE_KUBECONFIG }}" > admin.conf
+          umask 077
+          mkdir -p ~/.ssh
+          cat > ~/.ssh/id_ci <<'EOF'
+          ${{ secrets.SSH_PRIVATE_KEY }}
+          EOF
+                  chmod 600 ~/.ssh/id_ci
+
+      - name: Fetch kubeconfig from master (via Tailscale)
+        run: |
+          ssh -vvv -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+              -i ~/.ssh/id_ci \
+              "$MASTER_TS_USER@$MASTER_TS_HOST" \
+              "sudo cat $REMOTE_KUBECONFIG" > admin.conf
           mkdir -p ~/.kube
           cp admin.conf ~/.kube/config
           chmod 600 ~/.kube/config
 
-      # 4) Appliquer le DaemonSet NGINXkkk
       - name: Apply NGINX DaemonSet
         run: |
           kubectl --kubeconfig ~/.kube/config cluster-info
