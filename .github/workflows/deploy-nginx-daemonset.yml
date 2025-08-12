@@ -44,7 +44,7 @@ jobs:
           cp admin.conf ~/.kube/config
           chmod 600 ~/.kube/config
 
-      # 4) Appliquer le DaemonSet NGINX
+      # 4) Appliquer le DaemonSet NGINXkkk
       - name: Apply NGINX DaemonSet
         run: |
           kubectl --kubeconfig ~/.kube/config cluster-info
