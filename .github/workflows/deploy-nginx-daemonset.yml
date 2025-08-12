@@ -41,13 +41,28 @@ jobs:
           ${{ secrets.SSH_PRIVATE_KEY }}
           EOF
                   chmod 600 ~/.ssh/id_ci
-
-      - name: Fetch kubeconfig from master (via Tailscale)
+      # open ssh tunnel to master via Tailscale
+      - name: Open SSH tunnel to apiserver (via Tailscale)
         run: |
-          ssh -vvv -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
+          # On forwarde le port local 16443 -> 127.0.0.1:6443 du master
+          ssh -fN -o ExitOnForwardFailure=yes -o StrictHostKeyChecking=no -o IdentitiesOnly=yes \
               -i ~/.ssh/id_ci \
-              "$MASTER_TS_USER@$MASTER_TS_HOST" \
-              "sudo cat $REMOTE_KUBECONFIG" > admin.conf
+              -L 16443:127.0.0.1:6443 \
+              "devops@100.114.232.32"
+          # Vérif que le port local écoute
+          ss -ltn | grep ':16443'
+
+      - name: Fetch kubeconfig from master
+        run: |
+          ssh -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -i ~/.ssh/id_ci \
+              "devops@100.114.232.32" \
+              "sudo cat /etc/kubernetes/admin.conf" > admin.conf
+          # On réécrit le "server" pour passer par le tunnel local
+          # et on force le nom TLS attendu à "kubernetes" (présent dans les SAN kubeadm)
+          kubectl config set-cluster kubernetes \
+            --server="https://127.0.0.1:16443" \
+            --tls-server-name="kubernetes" \
+            --kubeconfig=admin.conf
           mkdir -p ~/.kube
           cp admin.conf ~/.kube/config
           chmod 600 ~/.kube/config
