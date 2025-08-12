@@ -5,7 +5,7 @@ on:
     branches:
       - 01-firstvm
     paths:
-      - "nginx-daemonset.yaml"
+      - "nginx-daemonset.yml"
       - ".github/workflows/deploy-nginx-daemonset.yml"
   workflow_dispatch:
 
@@ -55,6 +55,6 @@ jobs:
       - name: Apply NGINX DaemonSet
         run: |
           kubectl --kubeconfig ~/.kube/config cluster-info
-          kubectl --kubeconfig ~/.kube/config apply -f nginx-daemonset.yaml
+          kubectl --kubeconfig ~/.kube/config apply -f nginx-daemonset.yml
           kubectl --kubeconfig ~/.kube/config -n default rollout status ds/nginx-all-nodes --timeout=180s || true
           kubectl --kubeconfig ~/.kube/config -n default get ds nginx-all-nodes -o wide
